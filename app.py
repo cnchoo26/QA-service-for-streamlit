@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit_sortables import sort_items
 
 # ----------------------------------------------------------------------------
 # 기본 설정
@@ -75,6 +76,8 @@ def init_state():
     st.session_state.setdefault("list_page", 1)
     st.session_state.setdefault("donut_selected_index", None)
     st.session_state.setdefault("trend_selected_index", None)
+    st.session_state.setdefault("drag_widget_version", 0)
+    st.session_state.setdefault("kanban_drag_processed", None)
 
 
 init_state()
@@ -349,10 +352,14 @@ def confirm_move_dialog(pending):
     c1, c2 = st.columns(2)
     if c1.button("취소", use_container_width=True):
         st.session_state.pending_move = None
+        st.session_state.drag_widget_version += 1
+        st.session_state.kanban_drag_processed = None
         st.rerun()
     if c2.button("이동", use_container_width=True, type="primary"):
         update_status(pending["id"], pending["new_status"])
         st.session_state.pending_move = None
+        st.session_state.drag_widget_version += 1
+        st.session_state.kanban_drag_processed = None
         st.rerun()
 
 
@@ -525,7 +532,6 @@ st.divider()
 # 칸반 보드
 # ----------------------------------------------------------------------------
 
-board_col, list_col = st.columns([5, 0])  # placeholder to keep layout simple
 st.markdown("### 칸반 보드")
 
 KANBAN_DISPLAY_LIMIT = 25
@@ -534,21 +540,56 @@ type_filter = st.session_state.type_filter
 if type_filter:
     st.info(f"유형 필터: **{type_filter}**  (필터 해제는 위 '유형 필터'를 '(전체)'로 변경)")
 
+visible_by_status = {}
+for status in STATUSES:
+    subset = df_all[df_all["status"] == status]
+    if type_filter:
+        subset = subset[subset["issueType"] == type_filter]
+    subset = subset.sort_values("dueDate")
+    visible_by_status[status] = {"total": len(subset), "visible": subset.head(KANBAN_DISPLAY_LIMIT)}
+
+st.caption("카드를 드래그해서 컬럼 사이로 옮길 수도 있습니다.")
+capa_to_id = {}
+drag_containers = []
+for status in STATUSES:
+    labels = []
+    for _, issue in visible_by_status[status]["visible"].iterrows():
+        label = f"{issue['capaNo']} · {issue['productName']}"
+        labels.append(label)
+        capa_to_id[label] = int(issue["id"])
+    drag_containers.append({"header": STATUS_LABELS[status], "items": labels})
+
+drag_result = sort_items(
+    drag_containers,
+    multi_containers=True,
+    direction="horizontal",
+    key=f"kanban_drag_{st.session_state.drag_widget_version}",
+)
+
+drag_status_by_label = {item: c["header"] for c in drag_containers for item in c["items"]}
+result_status_by_label = {item: c["header"] for c in drag_result for item in c["items"]}
+moved_label = next(
+    (label for label, new_header in result_status_by_label.items() if drag_status_by_label.get(label) != new_header),
+    None,
+)
+if moved_label != st.session_state.kanban_drag_processed:
+    st.session_state.kanban_drag_processed = moved_label
+    if moved_label is not None and moved_label in capa_to_id:
+        new_status = STATUSES[[STATUS_LABELS[s] for s in STATUSES].index(result_status_by_label[moved_label])]
+        st.session_state.pending_move = {"id": capa_to_id[moved_label], "new_status": new_status}
+        st.rerun()
+
 cols = st.columns(4)
 for col_widget, status in zip(cols, STATUSES):
     with col_widget:
-        subset = df_all[df_all["status"] == status]
-        if type_filter:
-            subset = subset[subset["issueType"] == type_filter]
-        subset = subset.sort_values("dueDate")
-        total_in_col = len(subset)
+        total_in_col = visible_by_status[status]["total"]
+        visible = visible_by_status[status]["visible"]
 
         st.markdown(
             f"<div class='column-header'><span>{STATUS_LABELS[status]}</span><span>{total_in_col}</span></div>",
             unsafe_allow_html=True,
         )
 
-        visible = subset.head(KANBAN_DISPLAY_LIMIT)
         if visible.empty:
             st.caption("이슈 없음")
 
