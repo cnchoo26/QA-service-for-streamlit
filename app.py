@@ -13,9 +13,8 @@ import streamlit as st
 st.set_page_config(page_title="CAPA Tracker | QMove", page_icon="📋", layout="wide")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-ISSUES_CSV = os.path.join(DATA_DIR, "issues.csv")
-HISTORY_CSV = os.path.join(DATA_DIR, "issue_history.csv")
+ISSUES_CSV = os.path.join(BASE_DIR, "issues.csv")
+HISTORY_CSV = os.path.join(BASE_DIR, "issue_history.csv")
 
 ISSUE_TYPES = ["원료불량", "포장불량", "표시오류", "공정이탈", "고객불만", "기타"]
 STATUSES = ["received", "analysis", "action", "done"]
