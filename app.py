@@ -73,6 +73,8 @@ def init_state():
     st.session_state.setdefault("confirm_delete", False)
     st.session_state.setdefault("pending_move", None)
     st.session_state.setdefault("list_page", 1)
+    st.session_state.setdefault("donut_selected_index", None)
+    st.session_state.setdefault("trend_selected_index", None)
 
 
 init_state()
@@ -432,7 +434,22 @@ with c1:
             paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#edeef0"),
             legend=dict(orientation="h"),
         )
-        st.plotly_chart(fig, use_container_width=True)
+        donut_event = st.plotly_chart(
+            fig, use_container_width=True, on_select="rerun",
+            selection_mode="points", key="type_donut_chart",
+        )
+        donut_points = donut_event.selection["points"] if donut_event else []
+        donut_index = donut_points[0]["point_index"] if donut_points else None
+        prev_index = st.session_state.donut_selected_index
+        if donut_index != prev_index:
+            st.session_state.donut_selected_index = donut_index
+            # 새로 선택된 조각이 있으면 그 유형을, 선택이 해제됐다면(index -> None)
+            # 방금까지 선택돼 있던 조각의 유형을 기준으로 토글한다.
+            ref_index = donut_index if donut_index is not None else prev_index
+            if ref_index is not None and ref_index < len(dist):
+                clicked_type = dist[ref_index]["type"]
+                st.session_state.type_filter = None if st.session_state.type_filter == clicked_type else clicked_type
+            st.rerun()
     else:
         st.info("등록된 이슈가 없습니다.")
 
@@ -460,10 +477,47 @@ with c2:
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font=dict(color="#edeef0"), xaxis=dict(gridcolor="#2f3440"), yaxis=dict(gridcolor="#2f3440"),
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    trend_event = st.plotly_chart(
+        fig2, use_container_width=True, on_select="rerun",
+        selection_mode="points", key="trend_line_chart",
+    )
+    trend_points = trend_event.selection["points"] if trend_event else []
+    trend_index = trend_points[0]["point_index"] if trend_points else None
+    prev_trend_index = st.session_state.trend_selected_index
+    if trend_index != prev_trend_index:
+        st.session_state.trend_selected_index = trend_index
+        ref_trend_index = trend_index if trend_index is not None else prev_trend_index
+        if ref_trend_index is not None and ref_trend_index < len(trend):
+            clicked_date = trend[ref_trend_index]["date"]
+            st.session_state.selected_trend_date = (
+                None if st.session_state.selected_trend_date == clicked_date else clicked_date
+            )
+        st.rerun()
 
     st.progress(stats["compliance_rate"] / 100, text=f"마감기한 준수율 {stats['compliance_rate']}%")
     st.progress(stats["throughput_rate"] / 100, text=f"처리율 {stats['throughput_rate']}% ({stats['done_count']}건)")
+
+    selected_date = st.session_state.selected_trend_date
+    if not selected_date:
+        st.caption("그래프의 타점을 클릭하면 해당 날짜에 등록된 이슈 목록이 표시됩니다.")
+    else:
+        day_issues = df_all[df_all["createdAt"] == selected_date]
+        if day_issues.empty:
+            st.caption(f"{format_date(selected_date)}에 등록된 이슈가 없습니다.")
+        else:
+            st.markdown(f"**{format_date(selected_date)} 등록 이슈 ({len(day_issues)}건)**")
+            for _, day_issue in day_issues.iterrows():
+                dc1, dc2 = st.columns([5, 1])
+                dc1.markdown(
+                    f"{day_issue['capaNo']} · {day_issue['productName']} "
+                    f"· <span class='capa-badge'>{day_issue['issueType']}</span> · {STATUS_LABELS[day_issue['status']]}",
+                    unsafe_allow_html=True,
+                )
+                if dc2.button("상세", key=f"trend-detail-{day_issue['id']}", use_container_width=True):
+                    st.session_state.detail_id = int(day_issue["id"])
+                    st.session_state.confirm_delete = False
+                    st.session_state.pending_move = None
+                    st.rerun()
 
 st.divider()
 
