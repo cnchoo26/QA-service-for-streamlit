@@ -72,6 +72,7 @@ def init_state():
     st.session_state.setdefault("selected_trend_date", None)
     st.session_state.setdefault("confirm_delete", False)
     st.session_state.setdefault("pending_move", None)
+    st.session_state.setdefault("list_page", 1)
 
 
 init_state()
@@ -539,11 +540,21 @@ st.divider()
 # 전체 이슈 목록
 # ----------------------------------------------------------------------------
 
+LIST_PAGE_SIZE = 50
+
+
+def reset_list_page():
+    st.session_state.list_page = 1
+
+
 with st.expander("📄 전체 이슈 목록 (검색 / 필터)", expanded=False):
     s1, s2, s3 = st.columns([2, 1, 1])
-    search = s1.text_input("제품명, 담당자, CAPA No 검색", key="list_search")
-    status_pick = s2.selectbox("상태", ["전체"] + STATUSES, format_func=lambda s: "전체" if s == "전체" else STATUS_LABELS[s])
-    type_pick = s3.selectbox("유형", ["전체"] + ISSUE_TYPES, key="list_type_filter")
+    search = s1.text_input("제품명, 담당자, CAPA No 검색", key="list_search", on_change=reset_list_page)
+    status_pick = s2.selectbox(
+        "상태", ["전체"] + STATUSES, format_func=lambda s: "전체" if s == "전체" else STATUS_LABELS[s],
+        key="list_status_filter", on_change=reset_list_page,
+    )
+    type_pick = s3.selectbox("유형", ["전체"] + ISSUE_TYPES, key="list_type_filter", on_change=reset_list_page)
 
     filtered = df_all.copy()
     if status_pick != "전체":
@@ -559,10 +570,29 @@ with st.expander("📄 전체 이슈 목록 (검색 / 필터)", expanded=False):
         ]
     filtered = filtered.sort_values("createdAt", ascending=False)
 
-    display_df = filtered[["capaNo", "productName", "issueType", "assignee", "dueDate", "status"]].copy()
+    total_count = len(filtered)
+    total_pages = max(1, -(-total_count // LIST_PAGE_SIZE))
+    if st.session_state.list_page > total_pages:
+        st.session_state.list_page = total_pages
+    page = st.session_state.list_page
+    start = (page - 1) * LIST_PAGE_SIZE
+    page_df = filtered.iloc[start:start + LIST_PAGE_SIZE]
+
+    display_df = page_df[["capaNo", "productName", "issueType", "assignee", "dueDate", "status"]].copy()
     display_df["dueDate"] = display_df["dueDate"].apply(format_date)
     display_df["status"] = display_df["status"].map(STATUS_LABELS)
     display_df.columns = ["CAPA No", "제품명", "유형", "담당자", "마감일", "상태"]
 
-    st.caption(f"총 {len(filtered)}건")
     st.dataframe(display_df, use_container_width=True, height=400, hide_index=True)
+
+    p1, p2, p3 = st.columns([1, 2, 1])
+    if p1.button("이전", disabled=page <= 1, key="list_prev_page"):
+        st.session_state.list_page -= 1
+        st.rerun()
+    p2.markdown(
+        f"<div style='text-align:center;'>{page} / {total_pages} 페이지 · 총 {total_count}건</div>",
+        unsafe_allow_html=True,
+    )
+    if p3.button("다음", disabled=page >= total_pages, key="list_next_page"):
+        st.session_state.list_page += 1
+        st.rerun()
