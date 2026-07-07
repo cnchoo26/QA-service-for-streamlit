@@ -71,6 +71,7 @@ def init_state():
     st.session_state.setdefault("show_new_modal", False)
     st.session_state.setdefault("selected_trend_date", None)
     st.session_state.setdefault("confirm_delete", False)
+    st.session_state.setdefault("pending_move", None)
 
 
 init_state()
@@ -331,6 +332,27 @@ def detail_dialog(issue_id):
             st.rerun()
 
 
+@st.dialog("상태 변경 확인")
+def confirm_move_dialog(pending):
+    df = st.session_state.issues_df
+    row = df[df["id"] == pending["id"]]
+    if row.empty:
+        st.session_state.pending_move = None
+        return
+    issue = row.iloc[0]
+    from_label = STATUS_LABELS[issue["status"]]
+    to_label = STATUS_LABELS[pending["new_status"]]
+    st.write(f"{issue['capaNo']} ({issue['productName']})을(를) '{from_label}'에서 '{to_label}'(으)로 이동할까요?")
+    c1, c2 = st.columns(2)
+    if c1.button("취소", use_container_width=True):
+        st.session_state.pending_move = None
+        st.rerun()
+    if c2.button("이동", use_container_width=True, type="primary"):
+        update_status(pending["id"], pending["new_status"])
+        st.session_state.pending_move = None
+        st.rerun()
+
+
 # ----------------------------------------------------------------------------
 # 헤더
 # ----------------------------------------------------------------------------
@@ -344,6 +366,9 @@ with h_right:
 
 if st.session_state.detail_id is not None:
     detail_dialog(st.session_state.detail_id)
+
+if st.session_state.pending_move is not None:
+    confirm_move_dialog(st.session_state.pending_move)
 
 df_all = st.session_state.issues_df
 
@@ -494,14 +519,15 @@ for col_widget, status in zip(cols, STATUSES):
             )
             b1, b2, b3 = st.columns([1, 1, 2])
             if b1.button("◀", key=f"prev-{issue['id']}", disabled=status_idx == 0, use_container_width=True):
-                update_status(int(issue["id"]), STATUSES[status_idx - 1])
+                st.session_state.pending_move = {"id": int(issue["id"]), "new_status": STATUSES[status_idx - 1]}
                 st.rerun()
             if b2.button("▶", key=f"next-{issue['id']}", disabled=status_idx == len(STATUSES) - 1, use_container_width=True):
-                update_status(int(issue["id"]), STATUSES[status_idx + 1])
+                st.session_state.pending_move = {"id": int(issue["id"]), "new_status": STATUSES[status_idx + 1]}
                 st.rerun()
             if b3.button("상세보기", key=f"detail-{issue['id']}", use_container_width=True):
                 st.session_state.detail_id = int(issue["id"])
                 st.session_state.confirm_delete = False
+                st.session_state.pending_move = None
                 st.rerun()
 
         if total_in_col > KANBAN_DISPLAY_LIMIT:
