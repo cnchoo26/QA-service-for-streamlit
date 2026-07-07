@@ -70,6 +70,7 @@ def init_state():
     st.session_state.setdefault("detail_id", None)
     st.session_state.setdefault("show_new_modal", False)
     st.session_state.setdefault("selected_trend_date", None)
+    st.session_state.setdefault("confirm_delete", False)
 
 
 init_state()
@@ -289,6 +290,19 @@ def detail_dialog(issue_id):
     issue = row.iloc[0]
     st.subheader(issue["capaNo"])
 
+    if st.session_state.confirm_delete:
+        st.warning("이 이슈를 삭제하시겠습니까?")
+        c1, c2 = st.columns(2)
+        if c1.button("취소", use_container_width=True, key="cancel_delete"):
+            st.session_state.confirm_delete = False
+            st.rerun()
+        if c2.button("삭제", use_container_width=True, type="primary", key="confirm_delete_btn"):
+            delete_issue(issue_id)
+            st.session_state.detail_id = None
+            st.session_state.confirm_delete = False
+            st.rerun()
+        return
+
     with st.form("detail_form"):
         product_name = st.text_input("제품명", value=issue["productName"])
         issue_type = st.selectbox("이슈 유형", ISSUE_TYPES, index=ISSUE_TYPES.index(issue["issueType"]))
@@ -306,13 +320,14 @@ def detail_dialog(issue_id):
         if save:
             update_issue(issue_id, product_name.strip(), issue_type, assignee.strip(), due_date, status)
             st.session_state.detail_id = None
+            st.session_state.confirm_delete = False
             st.rerun()
         if close:
             st.session_state.detail_id = None
+            st.session_state.confirm_delete = False
             st.rerun()
         if delete:
-            delete_issue(issue_id)
-            st.session_state.detail_id = None
+            st.session_state.confirm_delete = True
             st.rerun()
 
 
@@ -331,6 +346,26 @@ if st.session_state.detail_id is not None:
     detail_dialog(st.session_state.detail_id)
 
 df_all = st.session_state.issues_df
+
+st.divider()
+
+# ----------------------------------------------------------------------------
+# 인트로
+# ----------------------------------------------------------------------------
+
+intro1_img, intro1_text = st.columns([1, 4])
+with intro1_img:
+    st.image(os.path.join(BASE_DIR, "sources", "톱니바퀴.png"))
+with intro1_text:
+    st.markdown("#### 이슈 흐름을 관리하는 워크플로우")
+    st.caption("접수부터 분석, 조치, 완료까지 — 클레임이 지금 어느 단계에 머물러 있는지, 어디서 지연되고 있는지 칸반 보드로 한눈에 파악합니다.")
+
+intro2_text, intro2_img = st.columns([4, 1])
+with intro2_text:
+    st.markdown("#### 데이터로 남는 이슈 기록")
+    st.caption("제품명, 유형, 담당자, 마감기한까지 — 모든 클레임 이력이 대시보드 통계와 추이로 정리되어 필요할 때 바로 확인할 수 있습니다.")
+with intro2_img:
+    st.image(os.path.join(BASE_DIR, "sources", "서류.png"))
 
 st.divider()
 
@@ -466,6 +501,7 @@ for col_widget, status in zip(cols, STATUSES):
                 st.rerun()
             if b3.button("상세보기", key=f"detail-{issue['id']}", use_container_width=True):
                 st.session_state.detail_id = int(issue["id"])
+                st.session_state.confirm_delete = False
                 st.rerun()
 
         if total_in_col > KANBAN_DISPLAY_LIMIT:
